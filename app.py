@@ -182,6 +182,7 @@ def generar_pdf_charla(datos, participantes, ruta_firma_relator):
 # ==========================================
 def guardar_en_google(pdf_path, datos, participantes):
     if "gcp_service_account" not in st.secrets:
+        st.error("No se encontraron las credenciales 'gcp_service_account' en st.secrets.")
         return None, None
 
     scopes = [
@@ -189,9 +190,17 @@ def guardar_en_google(pdf_path, datos, participantes):
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # Convertir a diccionario y reemplazar los \n de texto por saltos reales
+    # Saneamiento exhaustivo de credenciales (Trata \n, comillas extras y espacios)
     service_account_info = dict(st.secrets["gcp_service_account"])
-    service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+    pk = service_account_info.get("private_key", "")
+    
+    # Sanitizar PEM private key
+    pk = pk.strip("'\"").strip()
+    pk = pk.replace("\\n", "\n")
+    if not pk.endswith("\n"):
+        pk += "\n"
+    
+    service_account_info["private_key"] = pk
 
     creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
     
