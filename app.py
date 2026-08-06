@@ -75,7 +75,6 @@ def generar_pdf_charla(datos, participantes, ruta_firma_relator):
     pdf.set_font("Helvetica", "", 7.5)
     
     # Checkboxes Actividad y Modalidad
-    y_curr = pdf.get_y()
     pdf.cell(30, 8, "TIPO DE LA ACTIVIDAD:", 1, 0, "C")
     pdf.cell(65, 8, f"  [X] {datos['tipo_actividad']}", 1, 0, "L")
     pdf.cell(30, 8, "MODALIDAD:", 1, 0, "C")
@@ -189,11 +188,12 @@ def guardar_en_google(pdf_path, datos, participantes):
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
+    
     # Convertir a diccionario y reemplazar los \n de texto por saltos reales
-service_account_info = dict(st.secrets["gcp_service_account"])
-service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+    service_account_info = dict(st.secrets["gcp_service_account"])
+    service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
 
-creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
+    creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
     
     # 1. Subir PDF a Google Drive
     drive_service = build('drive', 'v3', credentials=creds)
