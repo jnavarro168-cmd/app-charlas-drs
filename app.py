@@ -61,6 +61,7 @@ class PDFCharla(FPDF):
         self.set_xy(146, 27)
         self.cell(53, 6, "Fecha: 05/02/2025", 0, 0, "L")
 
+
 def generar_pdf_charla(datos, participantes, ruta_firma_relator):
     pdf = PDFCharla()
     pdf.add_page()
@@ -190,7 +191,7 @@ def guardar_en_google(pdf_path, datos, participantes):
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # Saneamiento exhaustivo de credenciales (Trata \n, comillas extras y espacios)
+    # Saneamiento exhaustivo de credenciales
     service_account_info = dict(st.secrets["gcp_service_account"])
     pk = service_account_info.get("private_key", "")
     
