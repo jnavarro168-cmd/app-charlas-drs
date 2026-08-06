@@ -189,7 +189,11 @@ def guardar_en_google(pdf_path, datos, participantes):
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    # Convertir a diccionario y reemplazar los \n de texto por saltos reales
+service_account_info = dict(st.secrets["gcp_service_account"])
+service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+
+creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
     
     # 1. Subir PDF a Google Drive
     drive_service = build('drive', 'v3', credentials=creds)
