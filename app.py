@@ -1,17 +1,31 @@
 import base64
 import json
+import datetime
+import tempfile
+import os
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Registro de Charlas de 5 Minutos", page_icon="📝", layout="centered")
+
+st.title("📝 Registro de Charlas de 5 Minutos")
+st.caption("DRS Ingeniería y Gestión")
+
+# --- CONEXIÓN A GOOGLE CLOUD VIA BASE64 SECRETS ---
 @st.cache_resource
 def conectar_google():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Decodificación limpia en memoria sin problemas de formato PEM
     b64_str = st.secrets["GOOGLE_CREDENTIALS_B64"]
     json_str = base64.b64decode(b64_str).decode("utf-8")
     creds_dict = json.loads(json_str)
@@ -21,6 +35,7 @@ def conectar_google():
     drive_service = build('drive', 'v3', credentials=credentials)
     
     return gc, drive_service
+
 try:
     gc, drive_service = conectar_google()
     st.success("✅ Conexión con Google Cloud establecida de forma segura.")
@@ -90,7 +105,7 @@ if submitted:
                 styles = getSampleStyleSheet()
                 
                 # Título del PDF
-                story.append(Paragraph(f"<b>REGISTRO DE CHARLA DE 5 MINUTOS</b>", styles['Title']))
+                story.append(Paragraph("<b>REGISTRO DE CHARLA DE 5 MINUTOS</b>", styles['Title']))
                 story.append(Spacer(1, 15))
                 
                 # Encabezado de la Charla
@@ -144,7 +159,7 @@ if submitted:
                 os.unlink(temp_pdf.name)
                 
                 st.balloons()
-                st.success(f"🎉 ¡Charla registrada exitosamente!")
+                st.success("🎉 ¡Charla registrada exitosamente!")
                 st.info(f"📄 Se guardó la información en la planilla y el reporte PDF en Drive (`{nombre_archivo_pdf}`).")
                 
             except Exception as ex:
