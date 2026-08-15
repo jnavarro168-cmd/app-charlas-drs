@@ -8,157 +8,210 @@ import gspread
 from google.oauth2.service_account import Credentials
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Registro de Charlas de 5 Minutos", page_icon="📝", layout="centered")
+st.set_page_config(page_title="DRS - Registro de Capacitación y Difusión", page_icon="📝", layout="centered")
 
-st.title("📝 Registro de Charlas de 5 Minutos")
-st.caption("DRS Ingeniería y Gestión")
+st.title("📝 Registro de Capacitación y Difusión")
+st.caption("DRS Ingeniería y Gestión — Formato F PER 603 03")
 
-# --- CONEXIÓN A GOOGLE CLOUD VIA BASE64 SECRETS ---
+# --- CONEXIÓN A GOOGLE CLOUD ---
 @st.cache_resource
 def conectar_google():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     b64_str = st.secrets["GOOGLE_CREDENTIALS_B64"]
     json_str = base64.b64decode(b64_str).decode("utf-8")
     creds_dict = json.loads(json_str)
-    
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    gc = gspread.authorize(credentials)
-    return gc
+    return gspread.authorize(credentials)
 
 try:
     gc = conectar_google()
-    st.success("✅ Conexión con Google Cloud establecida de forma segura.")
+    st.success("✅ Conexión con Google Cloud establecida.")
 except Exception as e:
-    st.error(f"❌ Error conectando a Google: {e}")
+    st.error(f"❌ Error de conexión: {e}")
     st.stop()
 
-# --- FORMULARIO DE INGRESO DE DATOS ---
+# --- FORMULARIO PRINCIPAL ---
 with st.form("form_charla"):
-    st.subheader("Datos de la Charla")
-    
+    st.subheader("1. Datos de la Actividad")
     col1, col2 = st.columns(2)
     with col1:
-        fecha = st.date_input("Fecha", datetime.date.today())
-        relator = st.text_input("Nombre del Relator / Supervisor")
+        tipo_actividad = st.selectbox("Tipo de Actividad", ["Charla de seguridad", "Capacitación", "Reflexión", "Reunión"])
+        modalidad = st.selectbox("Modalidad", ["Asistencia Presencial", "E-learning", "Interna", "Externa"])
+        relator_nombre = st.text_input("Nombre del Relator")
+        relator_rut = st.text_input("RUT del Relator")
     with col2:
-        obra = st.text_input("Obra / Proyecto")
-        tema = st.text_input("Tema de la Charla de 5 Minutos")
+        relator_cargo = st.text_input("Cargo del Relator", value="Asesor SSOMA")
+        ubicacion_obra = st.text_input("Ubicación / Obra / Proyecto")
+        fecha_act = st.date_input("Fecha", datetime.date.today())
         
-    observaciones = st.text_area("Observaciones / Acuerdos", placeholder="Escribe aquí los puntos principales abordados...")
-    
-    st.subheader("Asistentes")
-    cant_asistentes = st.number_input("Número de Asistentes", min_value=1, max_value=20, value=3, step=1)
-    
+    c_h1, c_h2 = st.columns(2)
+    with c_h1:
+        hora_inicio = st.time_input("Hora Inicio", datetime.time(9, 0))
+    with c_h2:
+        hora_fin = st.time_input("Hora Término", datetime.time(9, 5))
+
+    st.subheader("2. Tema Principal")
+    tema_principal = st.text_area(
+        "Descripción / Difusión realizada",
+        placeholder="Escriba los puntos clave abordados en la charla..."
+    )
+
+    st.subheader("3. Lista de Participantes")
+    cant_asistentes = st.number_input("Número de Asistentes", min_value=1, max_value=30, value=3, step=1)
+
     asistentes_data = []
     for i in range(int(cant_asistentes)):
-        st.markdown(f"**Asistente #{i+1}**")
-        c1, c2, c3 = st.columns([3, 2, 2])
-        with c1:
-            nombre = st.text_input(f"Nombre completo #{i+1}", key=f"nom_{i}")
-        with c2:
-            rut = st.text_input(f"RUT/ID #{i+1}", key=f"rut_{i}")
-        with c3:
-            cargo = st.text_input(f"Cargo #{i+1}", key=f"car_{i}")
-        asistentes_data.append({"nombre": nombre, "rut": rut, "cargo": cargo})
+        st.markdown(f"**Participante #{i+1}**")
+        ca, cb, cc = st.columns([3, 2, 2])
+        with ca:
+            nom = st.text_input(f"Nombre completo #{i+1}", key=f"nom_{i}")
+        with cb:
+            rut = st.text_input(f"RUT #{i+1}", key=f"rut_{i}")
+        with cc:
+            car = st.text_input(f"Cargo #{i+1}", key=f"car_{i}")
+        asistentes_data.append({"nombre": nom, "rut": rut, "cargo": car})
 
-    submitted = st.form_submit_button("💾 Registrar Charla y Generar PDF", use_container_width=True)
+    submitted = st.form_submit_button("💾 Registrar y Generar PDF Oficial", use_container_width=True)
 
-# --- PROCESAMIENTO Y GENERACIÓN DE DOCUMENTOS ---
+# --- PROCESAMIENTO Y GENERACIÓN DEL PDF OFICIAL ---
 if submitted:
-    if not relator or not tema or not obra:
-        st.warning("⚠️ Por favor completa los campos obligatorios (Relator, Obra y Tema).")
+    if not relator_nombre or not tema_principal or not ubicacion_obra:
+        st.warning("⚠️ Por favor completa los campos obligatorios (Relator, Ubicación y Tema).")
     else:
-        with st.spinner("Procesando registro en planilla..."):
+        with st.spinner("Guardando en planilla y generando PDF oficial..."):
             try:
-                # 1. Registrar en Google Sheets
-                spreadsheet_id = st.secrets["SPREADSHEET_ID"]
-                sheet = gc.open_by_key(spreadsheet_id).sheet1
-                
-                # Fila resumen
+                # 1. Enviar a Google Sheets
+                sheet = gc.open_by_key(st.secrets["SPREADSHEET_ID"]).sheet1
                 nombres_asistentes = ", ".join([a["nombre"] for a in asistentes_data if a["nombre"]])
-                fila_registro = [
-                    str(fecha),
-                    obra,
-                    relator,
-                    tema,
-                    int(cant_asistentes),
-                    nombres_asistentes,
-                    observaciones
-                ]
-                sheet.append_row(fila_registro)
                 
-                # 2. Generar PDF
+                fila = [
+                    str(fecha_act), tipo_actividad, modalidad, ubicacion_obra,
+                    relator_nombre, relator_rut, relator_cargo,
+                    hora_inicio.strftime("%H:%M"), hora_fin.strftime("%H:%M"),
+                    int(cant_asistentes), nombres_asistentes, tema_principal
+                ]
+                sheet.append_row(fila)
+
+                # 2. Construir PDF con ReportLab (Estilo F PER 603 03)
                 temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-                doc = SimpleDocTemplate(temp_pdf.name, pagesize=letter)
+                doc = SimpleDocTemplate(
+                    temp_pdf.name, pagesize=letter,
+                    leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36
+                )
                 story = []
                 styles = getSampleStyleSheet()
-                
-                # Título del PDF
-                story.append(Paragraph("<b>REGISTRO DE CHARLA DE 5 MINUTOS</b>", styles['Title']))
-                story.append(Spacer(1, 15))
-                
-                # Encabezado de la Charla
-                info_encabezado = [
-                    [Paragraph("<b>Fecha:</b>", styles['Normal']), str(fecha), Paragraph("<b>Obra/Proyecto:</b>", styles['Normal']), obra],
-                    [Paragraph("<b>Relator:</b>", styles['Normal']), relator, Paragraph("<b>Tema:</b>", styles['Normal']), tema]
+
+                # Estilos personalizados
+                style_header = ParagraphStyle('HeaderTitle', parent=styles['Normal'], fontSize=10, leading=12, fontName="Helvetica-Bold", alignment=1)
+                style_body_bold = ParagraphStyle('BodyBold', parent=styles['Normal'], fontSize=8, leading=10, fontName="Helvetica-Bold")
+                style_body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8, leading=10)
+
+                # --- ENCABEZADO OFICIAL ---
+                header_data = [
+                    [
+                        Paragraph("<b>DRS INGENIERÍA Y GESTIÓN</b>", style_header),
+                        Paragraph("<b>REGISTRO DE CAPACITACIÓN Y DIFUSIÓN</b>", style_header),
+                        Paragraph("<b>Código:</b> F PER 603 03<br/><b>Revisión:</b> 10<br/><b>Fecha:</b> 05/02/2025", style_body)
+                    ]
                 ]
-                tabla_enc = Table(info_encabezado, colWidths=[80, 160, 90, 160])
-                tabla_enc.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke),
+                t_header = Table(header_data, colWidths=[150, 240, 150])
+                t_header.setStyle(TableStyle([
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                    ('PADDING', (0,0), (-1,-1), 4),
+                ]))
+                story.append(t_header)
+                story.append(Spacer(1, 10))
+
+                # --- SECCIÓN 1: DATOS DE LA ACTIVIDAD ---
+                story.append(Paragraph("<b>1. DATOS DE LA ACTIVIDAD</b>", style_body_bold))
+                sec1_data = [
+                    [Paragraph("<b>TIPO DE ACTIVIDAD:</b>", style_body), tipo_actividad, Paragraph("<b>MODALIDAD:</b>", style_body), modalidad],
+                    [Paragraph("<b>RELATOR:</b>", style_body), f"{relator_nombre} (RUT: {relator_rut})", Paragraph("<b>CARGO:</b>", style_body), relator_cargo],
+                    [Paragraph("<b>UBICACIÓN / OBRA:</b>", style_body), ubicacion_obra, Paragraph("<b>FECHA:</b>", style_body), str(fecha_act)]
+                ]
+                t_sec1 = Table(sec1_data, colWidths=[110, 160, 90, 180])
+                t_sec1.setStyle(TableStyle([
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
+                    ('BACKGROUND', (2,0), (2,-1), colors.whitesmoke),
+                    ('PADDING', (0,0), (-1,-1), 4),
+                ]))
+                story.append(t_sec1)
+                story.append(Spacer(1, 10))
+
+                # --- SECCIÓN 2: TEMA PRINCIPAL ---
+                story.append(Paragraph("<b>2. TEMA PRINCIPAL</b>", style_body_bold))
+                t_sec2 = Table([[Paragraph(tema_principal, style_body)]], colWidths=[540])
+                t_sec2.setStyle(TableStyle([
                     ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
                     ('PADDING', (0,0), (-1,-1), 6),
                 ]))
-                story.append(tabla_enc)
-                story.append(Spacer(1, 15))
+                story.append(t_sec2)
+                story.append(Spacer(1, 10))
+
+                # --- SECCIÓN 3: LISTA DE PARTICIPANTES ---
+                story.append(Paragraph("<b>3. LISTA DE PARTICIPANTES</b>", style_body_bold))
+                part_data = [["N°", "NOMBRE Y APELLIDO", "RUT", "CARGO", "PROYECTO / OBRA", "FIRMA"]]
                 
-                # Tabla de Asistentes
-                story.append(Paragraph("<b>Nómina de Asistentes</b>", styles['Heading2']))
-                tabla_asist_data = [["N°", "Nombre Completo", "RUT", "Cargo"]]
-                for idx, asis in enumerate(asistentes_data, 1):
-                    tabla_asist_data.append([str(idx), asis["nombre"], asis["rut"], asis["cargo"]])
-                    
-                tabla_asis = Table(tabla_asist_data, colWidths=[30, 200, 120, 140])
-                tabla_asis.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,0), colors.navy),
-                    ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                for idx, a in enumerate(asistentes_data, 1):
+                    part_data.append([str(idx), a["nombre"], a["rut"], a["cargo"], ubicacion_obra, ""])
+                
+                # Rellenar filas vacías hasta completar 10 filas estándar
+                for idx in range(len(asistentes_data) + 1, 11):
+                    part_data.append([str(idx), "", "", "", "", ""])
+
+                t_part = Table(part_data, colWidths=[25, 145, 80, 110, 110, 70])
+                t_part.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#002060')),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
                     ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-                    ('PADDING', (0,0), (-1,-1), 5),
+                    ('ALIGN', (0,0), (0,-1), 'CENTER'),
+                    ('PADDING', (0,0), (-1,-1), 4),
                 ]))
-                story.append(tabla_asis)
-                story.append(Spacer(1, 15))
-                
-                if observaciones:
-                    story.append(Paragraph("<b>Observaciones / Acuerdos:</b>", styles['Heading3']))
-                    story.append(Paragraph(observaciones, styles['Normal']))
-                
+                story.append(t_part)
+                story.append(Spacer(1, 10))
+
+                # --- RESUMEN Y TIEMPOS ---
+                resumen_data = [
+                    [
+                        f"N° DE PARTICIPANTES: {cant_asistentes}",
+                        f"FECHA: {fecha_act}",
+                        f"HORA INICIO: {hora_inicio.strftime('%H:%M')}",
+                        f"HORA TÉRMINO: {hora_fin.strftime('%H:%M')}"
+                    ]
+                ]
+                t_resumen = Table(resumen_data, colWidths=[135, 135, 135, 135])
+                t_resumen.setStyle(TableStyle([
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke),
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                    ('PADDING', (0,0), (-1,-1), 4),
+                ]))
+                story.append(t_resumen)
+
                 doc.build(story)
-                
-                # Leer el contenido del PDF para el botón de descarga
-                with open(temp_pdf.name, "rb") as pdf_file:
-                    pdf_bytes = pdf_file.read()
-                
+
+                with open(temp_pdf.name, "rb") as f:
+                    pdf_bytes = f.read()
                 os.unlink(temp_pdf.name)
-                
+
                 st.balloons()
-                st.success("🎉 ¡Charla registrada exitosamente en Google Sheets!")
+                st.success("🎉 ¡Registro grabado con éxito en Google Sheets!")
                 
-                # Botón para descargar el PDF directamente
-                nombre_archivo_pdf = f"Charla_{fecha}_{obra}_{tema[:15]}.pdf".replace(" ", "_")
+                nombre_pdf = f"F_PER_603_03_{fecha_act}_{ubicacion_obra}.pdf".replace(" ", "_")
                 st.download_button(
-                    label="📥 Descargar PDF de la Charla",
+                    label="📥 Descargar PDF Formato F PER 603 03",
                     data=pdf_bytes,
-                    file_name=nombre_archivo_pdf,
+                    file_name=nombre_pdf,
                     mime="application/pdf",
                     use_container_width=True
                 )
-                
+
             except Exception as ex:
-                st.error(f"❌ Ocurrió un detalle al guardar: {ex}")
+                st.error(f"❌ Ocurrió un error al procesar el registro: {ex}")
