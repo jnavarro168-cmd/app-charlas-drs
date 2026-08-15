@@ -1,40 +1,26 @@
+import base64
+import json
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-import datetime
-import tempfile
-import os
-import json
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Registro de Charlas de 5 Minutos", page_icon="📝", layout="centered")
-
-st.title("📝 Registro de Charlas de 5 Minutos")
-st.caption("DRS Ingeniería y Gestión")
-
-# --- CONEXIÓN A GOOGLE CLOUD VIA SECRETS ---
 @st.cache_resource
 def conectar_google():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Streamlit convierte automáticamente la sección [gcp_service_account] en un diccionario válido
-    creds_dict = dict(st.secrets["gcp_service_account"])
+    # Decodificación limpia en memoria sin problemas de formato PEM
+    b64_str = st.secrets["GOOGLE_CREDENTIALS_B64"]
+    json_str = base64.b64decode(b64_str).decode("utf-8")
+    creds_dict = json.loads(json_str)
     
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    
     gc = gspread.authorize(credentials)
     drive_service = build('drive', 'v3', credentials=credentials)
     
     return gc, drive_service
-
 try:
     gc, drive_service = conectar_google()
     st.success("✅ Conexión con Google Cloud establecida de forma segura.")
