@@ -25,13 +25,9 @@ def conectar_google():
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Cargar credenciales desde Streamlit Secrets
-    creds_dict = dict(st.secrets["gcp_service_account"])
+    # Cargar credenciales desde la cadena JSON de Secrets
+    creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
     
-    # Corregir saltos de línea en la clave privada si fuera necesario
-    if "\\n" in creds_dict["private_key"]:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     
     gc = gspread.authorize(credentials)
