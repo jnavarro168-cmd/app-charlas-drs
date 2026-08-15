@@ -6,8 +6,6 @@ import os
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
@@ -32,12 +30,10 @@ def conectar_google():
     
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(credentials)
-    drive_service = build('drive', 'v3', credentials=credentials)
-    
-    return gc, drive_service
+    return gc
 
 try:
-    gc, drive_service = conectar_google()
+    gc = conectar_google()
     st.success("✅ Conexión con Google Cloud establecida de forma segura.")
 except Exception as e:
     st.error(f"❌ Error conectando a Google: {e}")
@@ -79,7 +75,7 @@ if submitted:
     if not relator or not tema or not obra:
         st.warning("⚠️ Por favor completa los campos obligatorios (Relator, Obra y Tema).")
     else:
-        with st.spinner("Procesando registro y guardando en Google Cloud..."):
+        with st.spinner("Procesando registro en planilla..."):
             try:
                 # 1. Registrar en Google Sheets
                 spreadsheet_id = st.secrets["SPREADSHEET_ID"]
@@ -98,7 +94,7 @@ if submitted:
                 ]
                 sheet.append_row(fila_registro)
                 
-                # 2. Generar PDF Temporal con ReportLab
+                # 2. Generar PDF
                 temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
                 doc = SimpleDocTemplate(temp_pdf.name, pagesize=letter)
                 story = []
@@ -145,29 +141,24 @@ if submitted:
                 
                 doc.build(story)
                 
-                # 3. Subir PDF a Google Drive sin depender de la cuota propia del bot
-                folder_id = st.secrets["FOLDER_ID"]
-                nombre_archivo_pdf = f"Charla_{fecha}_{obra}_{tema[:15]}.pdf".replace(" ", "_")
-                
-                file_metadata = {
-                    'name': nombre_archivo_pdf,
-                    'parents': [folder_id]
-                }
-                media = MediaFileUpload(temp_pdf.name, mimetype='application/pdf')
-                
-                # Usar supportsAllDrives=True
-                archivo_subido = drive_service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id',
-                    supportsAllDrives=True
-                ).execute()
+                # Leer el contenido del PDF para el botón de descarga
+                with open(temp_pdf.name, "rb") as pdf_file:
+                    pdf_bytes = pdf_file.read()
                 
                 os.unlink(temp_pdf.name)
                 
                 st.balloons()
-                st.success("🎉 ¡Charla registrada exitosamente!")
-                st.info(f"📄 Se guardó la información en la planilla y el reporte PDF en Drive (`{nombre_archivo_pdf}`).")
+                st.success("🎉 ¡Charla registrada exitosamente en Google Sheets!")
+                
+                # Botón para descargar el PDF directamente
+                nombre_archivo_pdf = f"Charla_{fecha}_{obra}_{tema[:15]}.pdf".replace(" ", "_")
+                st.download_button(
+                    label="📥 Descargar PDF de la Charla",
+                    data=pdf_bytes,
+                    file_name=nombre_archivo_pdf,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
                 
             except Exception as ex:
                 st.error(f"❌ Ocurrió un detalle al guardar: {ex}")
