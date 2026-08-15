@@ -145,7 +145,7 @@ if submitted:
                 
                 doc.build(story)
                 
-                # 3. Subir PDF a Google Drive
+                # 3. Subir PDF a Google Drive sin depender de la cuota propia del bot
                 folder_id = st.secrets["FOLDER_ID"]
                 nombre_archivo_pdf = f"Charla_{fecha}_{obra}_{tema[:15]}.pdf".replace(" ", "_")
                 
@@ -154,7 +154,14 @@ if submitted:
                     'parents': [folder_id]
                 }
                 media = MediaFileUpload(temp_pdf.name, mimetype='application/pdf')
-                archivo_subido = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                
+                # Usar supportsAllDrives=True
+                archivo_subido = drive_service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id',
+                    supportsAllDrives=True
+                ).execute()
                 
                 os.unlink(temp_pdf.name)
                 
