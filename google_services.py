@@ -11,7 +11,6 @@ SCOPES = [
 ]
 
 def get_google_credentials():
-    # Carga el JSON guardado en Secrets
     raw_json = st.secrets["gcp_json_str"]
     creds_dict = json.loads(raw_json)
     return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
@@ -51,10 +50,13 @@ def upload_pdf_to_drive(file_path: str, folder_id: str) -> str:
         'parents': [folder_id]
     }
     media = MediaFileUpload(file_path, mimetype='application/pdf')
+    
+    # Se agrega supportsAllDrives=True para autorizar la subida a carpetas compartidas
     uploaded_file = service.files().create(
         body=file_metadata,
         media_body=media,
-        fields='id, webViewLink'
+        fields='id, webViewLink',
+        supportsAllDrives=True
     ).execute()
 
     return uploaded_file.get('webViewLink')
