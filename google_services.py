@@ -1,4 +1,4 @@
-import os
+import json
 import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -11,22 +11,10 @@ SCOPES = [
 ]
 
 def get_google_credentials():
-    # Detecta el archivo service_account.json que acabas de subir
-    if os.path.exists("service_account.json"):
-        return Credentials.from_service_account_file(
-            "service_account.json",
-            scopes=SCOPES
-        )
-    
-    # Respaldo por secrets
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    pk = creds_dict["private_key"].strip().replace("\\n", "\n")
-    creds_dict["private_key"] = pk
-    
-    return Credentials.from_service_account_info(
-        creds_dict,
-        scopes=SCOPES
-    )
+    # Carga el JSON guardado en Secrets
+    raw_json = st.secrets["gcp_json_str"]
+    creds_dict = json.loads(raw_json)
+    return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
 
 def append_to_sheets(spreadsheet_id: str, data: dict, participants: list):
     creds = get_google_credentials()
