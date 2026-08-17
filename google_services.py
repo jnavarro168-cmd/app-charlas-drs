@@ -1,21 +1,17 @@
 import gspread
-from google.oauth2.credentials import Credentials
+from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import streamlit as st
 
 SCOPES = [
-    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/spreadsheets'
 ]
 
 def get_google_credentials():
-    return Credentials(
-        token=None,
-        refresh_token=st.secrets["oauth"]["refresh_token"],
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=st.secrets["oauth"]["client_id"],
-        client_secret=st.secrets["oauth"]["client_secret"],
+    return Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
         scopes=SCOPES
     )
 
