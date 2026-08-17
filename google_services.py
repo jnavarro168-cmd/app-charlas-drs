@@ -10,11 +10,25 @@ SCOPES = [
 ]
 
 def get_google_credentials():
-    # Convertimos los secrets a un diccionario editable
+    # Creamos una copia del diccionario de la cuenta de servicio
     creds_dict = dict(st.secrets["gcp_service_account"])
-    # Corregimos los saltos de línea en la clave privada
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
+    # 1. Limpiamos comillas simples o dobles extra que hayan podido quedar al pegar
+    pk = creds_dict["private_key"].strip()
+    
+    # 2. Convertimos los \n de texto a saltos de línea reales
+    pk = pk.replace("\\n", "\n")
+    
+    # 3. Si por el formato TOML no tiene saltos de línea internos, los formateamos correctamente
+    if "-----BEGIN PRIVATE KEY-----" in pk and "\n" not in pk.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", ""):
+        body = pk.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "").strip()
+        body_clean = body.replace(" ", "").replace("\n", "")
+        # Dividir la clave en bloques de 64 caracteres como exige el estándar PEM
+        lines = [body_clean[i:i+64] for i in range(0, len(body_clean), 64)]
+        pk = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(lines) + "\n-----END PRIVATE KEY-----\n"
+
+    creds_dict["private_key"] = pk
+
     return Credentials.from_service_account_info(
         creds_dict,
         scopes=SCOPES
