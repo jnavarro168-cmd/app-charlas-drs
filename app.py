@@ -4,7 +4,8 @@ import streamlit as st
 import pandas as pd
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-from google_services import append_to_sheets, upload_pdf_to_drive
+from supabase import create_client
+from google_services import append_to_sheets
 
 # Configuración de la página de Streamlit
 st.set_page_config(
@@ -150,7 +151,7 @@ if st.button("🚀 Guardar Charla y Generar Registro", type="primary"):
     elif not st.session_state.participantes:
         st.error("Debes agregar al menos un participante.")
     else:
-        with st.spinner("Procesando datos y sincronizando con Google..."):
+        with st.spinner("Procesando datos y guardando..."):
             datos_charla = {
                 "fecha": fecha.strftime("%Y-%m-%d"),
                 "tipo_actividad": tipo_actividad,
@@ -173,14 +174,22 @@ if st.button("🚀 Guardar Charla y Generar Registro", type="primary"):
             pdf_filename = f"Registro_{fecha.strftime('%Y%m%d')}_{tema.replace(' ', '_')}.pdf"
             generar_pdf(datos_charla, st.session_state.participantes, pdf_filename)
 
-            # 3. Subir PDF a Google Drive
+            # 3. Subir PDF a Supabase
             try:
-                folder_id = st.secrets["GOOGLE_DRIVE_FOLDER_ID"]
-                link_pdf = upload_pdf_to_drive(pdf_filename, folder_id)
-                st.success(f"✅ Documento PDF guardado en Google Drive.")
-                st.markdown(f"[📄 Ver archivo subido en Google Drive]({link_pdf})")
+                supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                
+                with open(pdf_filename, 'rb') as f:
+                    supabase.storage.from_('pdf-charlas').upload(
+                        file=f,
+                        path=pdf_filename,
+                        file_options={"content-type": "application/pdf", "upsert": "true"}
+                    )
+                
+                link_pdf = supabase.storage.from_('pdf-charlas').get_public_url(pdf_filename)
+                st.success("✅ Documento PDF guardado en Supabase.")
+                st.markdown(f"[📄 Ver / Descargar archivo PDF]({link_pdf})")
             except Exception as e:
-                st.error(f"Error al subir el archivo a Google Drive: {e}")
+                st.error(f"Error al subir el archivo a Supabase: {e}")
 
             # Limpiar archivo local temporal
             if os.path.exists(pdf_filename):
