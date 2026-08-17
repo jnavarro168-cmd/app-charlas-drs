@@ -2,14 +2,36 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 
+def fix_pem_key(key: str) -> str:
+    """
+    Limpia y normaliza la clave privada PEM eliminando secuencias '\\n' 
+    literales o saltos mal formateados.
+    """
+    if not key:
+        return key
+    
+    # Quitar comillas o espacios residuales
+    key = key.strip().strip('"').strip("'")
+    
+    header = "-----BEGIN PRIVATE KEY-----"
+    footer = "-----END PRIVATE KEY-----"
+    
+    if header in key and footer in key:
+        # Extraer el bloque Base64 entre el encabezado y el pie
+        body = key.replace(header, "").replace(footer, "")
+        # Eliminar cadenas '\\n', saltos de línea reales y espacios en blanco
+        body = body.replace("\\n", "").replace("\n", "").replace("\r", "").replace(" ", "").strip()
+        # Reconstruir la clave en formato PEM válido
+        return f"{header}\n{body}\n{footer}\n"
+    
+    return key.replace("\\n", "\n")
+
 def get_gspread_client():
-    """Conecta a Google Sheets parseando la clave privada correctamente desde Secrets."""
-    # Extraer diccionario de credenciales desde [gcp_service_account]
+    """Conecta a Google Sheets sanitizando automáticamente la clave privada."""
     creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # Corregir saltos de línea escapados en la clave privada
     if "private_key" in creds_dict:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        creds_dict["private_key"] = fix_pem_key(creds_dict["private_key"])
         
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
