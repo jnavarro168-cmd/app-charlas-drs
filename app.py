@@ -1,196 +1,74 @@
-import os
-import datetime
 import streamlit as st
-import pandas as pd
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from supabase import create_client
-from google_services import append_to_sheets
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 
-# Configuración de la página de Streamlit
-st.set_page_config(
-    page_title="Registro de Charlas y Capacitaciones",
-    page_icon="📋",
-    layout="wide"
-)
+# Configuración de página
+st.set_page_config(page_title="Gestión de Charlas", layout="wide")
 
-def generar_pdf(datos_charla: dict, participantes: list, filename: str) -> str:
-    """Genera un archivo PDF con la información de la charla y sus participantes."""
-    c = canvas.Canvas(filename, pagesize=letter)
-    width, height = letter
-
-    # Encabezado
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, height - 50, "REGISTRO DE ASISTENCIA Y CHARLA")
+# ==========================================
+# 1. AUTENTICACIÓN Y CONEXIÓN A GOOGLE SHEETS
+# ==========================================
+@st.cache_resource
+def get_gspread_client():
+    """
+    Carga las credenciales desde st.secrets['gcp_service_account'],
+    corrige los saltos de línea de private_key y retorna la conexión gspread.
+    """
+    # Convertir el Secret local/cloud a un diccionario de Python
+    creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # Datos generales de la actividad
-    c.setFont("Helvetica", 10)
-    y = height - 90
-    c.drawString(50, y, f"Fecha: {datos_charla.get('fecha')}")
-    c.drawString(300, y, f"Tipo de Actividad: {datos_charla.get('tipo_actividad')}")
+    # Corregir saltos de línea en la clave privada para evitar error InvalidData(Invalid padding)
+    if "private_key" in creds_dict and "\\n" in creds_dict["private_key"]:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
-    y -= 20
-    c.drawString(50, y, f"Modalidad: {datos_charla.get('modalidad')}")
-    c.drawString(300, y, f"Ubicación: {datos_charla.get('ubicacion')}")
+    # Definir los alcances (scopes) necesarios para Google Sheets y Drive
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
     
-    y -= 20
-    c.drawString(50, y, f"Relator: {datos_charla.get('relator_nombre')} (RUT: {datos_charla.get('relator_rut')})")
+    # Crear credenciales
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     
-    y -= 20
-    c.drawString(50, y, f"Tema: {datos_charla.get('tema')}")
+    # Autorizar y retornar cliente de gspread
+    return gspread.authorize(credentials)
 
-    # Línea divisoria
-    y -= 20
-    c.line(50, y, width - 50, y)
+def guardar_en_google_sheets(datos_registro):
+    """
+    Guarda una nueva fila de datos en la hoja de cálculo configurada.
+    """
+    try:
+        gc = get_gspread_client()
+        # Abrir libro por su ID desde los Secrets
+        sheet = gc.open_by_key(st.secrets["GOOGLE_SHEETS_ID"]).sheet1
+        
+        # Insertar los datos como nueva fila
+        sheet.append_row(datos_registro)
+        return True, "Registro guardado exitosamente en Google Sheets."
+    except Exception as e:
+        return False, f"Error al guardar en Google Sheets: {str(e)}"
 
-    # Tabla de participantes
-    y -= 30
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(50, y, "Lista de Participantes:")
+# ==========================================
+# 2. LÓGICA DE LA APLICACIÓN (INTERFACE)
+# ==========================================
+st.title("Gestión y Registro de Charlas")
 
-    y -= 20
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(50, y, "Nombre")
-    c.drawString(200, y, "RUT")
-    c.drawString(300, y, "Cargo")
-    c.drawString(410, y, "Proyecto")
-    c.drawString(500, y, "Estado")
-
-    y -= 10
-    c.line(50, y, width - 50, y)
-
-    c.setFont("Helvetica", 9)
-    for p in participantes:
-        y -= 20
-        if y < 50:  # Salto de página si se acaba el espacio
-            c.showPage()
-            y = height - 50
-            c.setFont("Helvetica", 9)
-
-        estado = "FIRMADO" if p.get("firmado") else "PENDIENTE"
-        c.drawString(50, y, str(p.get("nombre", "")))
-        c.drawString(200, y, str(p.get("rut", "")))
-        c.drawString(300, y, str(p.get("cargo", "")))
-        c.drawString(410, y, str(p.get("proyecto", "")))
-        c.drawString(500, y, estado)
-
-    c.save()
-    return filename
-
-
-# Inicializar el estado de la sesión para los participantes
-if "participantes" not in st.session_state:
-    st.session_state.participantes = []
-
-st.title("📋 Registro de Charlas y Capacitaciones")
-
-st.header("1. Datos Generales de la Actividad")
-col1, col2 = st.columns(2)
-
-with col1:
-    fecha = st.date_input("Fecha", datetime.date.today())
-    tipo_actividad = st.selectbox("Tipo de Actividad", ["Charla 5 Minutos", "Capacitación", "Inducción", "Taller"])
-    modalidad = st.selectbox("Modalidad", ["Presencial", "Online", "Híbrida"])
-    ubicacion = st.text_input("Ubicación / Sala", "Oficina Central")
-
-with col2:
-    relator_nombre = st.text_input("Nombre del Relator")
-    relator_rut = st.text_input("RUT del Relator")
-    tema = st.text_input("Tema / Título de la Charla")
-
-st.divider()
-
-st.header("2. Registro de Participantes")
-
-# Formulario para agregar participante
-with st.form("form_participante", clear_on_submit=True):
-    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
-    with col_p1:
-        p_nombre = st.text_input("Nombre Completo")
-    with col_p2:
-        p_rut = st.text_input("RUT")
-    with col_p3:
-        p_cargo = st.text_input("Cargo")
-    with col_p4:
-        p_proyecto = st.text_input("Proyecto / Área")
-
-    p_firmado = st.checkbox("¿Asistencia Firmada / Confirmada?", value=True)
-    
-    btn_agregar = st.form_submit_button("➕ Agregar Participante")
-    
-    if btn_agregar:
-        if p_nombre and p_rut:
-            st.session_state.participantes.append({
-                "nombre": p_nombre,
-                "rut": p_rut,
-                "cargo": p_cargo,
-                "proyecto": p_proyecto,
-                "firmado": p_firmado
-            })
-            st.success(f"Participante {p_nombre} agregado correctamente.")
-        else:
-            st.warning("El Nombre y el RUT son obligatorios.")
-
-# Mostrar tabla de participantes agregados
-if st.session_state.participantes:
-    st.subheader("Lista de Asistentes Ingresados")
-    df_part = pd.DataFrame(st.session_state.participantes)
-    st.dataframe(df_part, use_container_width=True)
-    
-    if st.button("🗑️ Limpiar Lista de Participantes"):
-        st.session_state.participantes = []
-        st.experimental_rerun()
-
-st.divider()
-
-st.header("3. Guardar y Procesar Registro")
+st.subheader("3. Guardar y Procesar Registro")
 
 if st.button("🚀 Guardar Charla y Generar Registro", type="primary"):
-    if not relator_nombre or not tema:
-        st.error("Por favor completa los campos obligatorios del relator y el tema.")
-    elif not st.session_state.participantes:
-        st.error("Debes agregar al menos un participante.")
+    # Ejemplo de datos a registrar (ajusta según las variables de tu formulario)
+    # Ejemplo: ["2026-08-17", "Charla de Seguridad", "Expositor Ejemplo", "Estado Guardado"]
+    datos = [
+        "2026-08-17", 
+        "Charla de Seguridad", 
+        "Expositor Ejemplo"
+    ]
+    
+    # Guardar en Google Sheets
+    exito, mensaje = guardar_en_google_sheets(datos)
+    
+    if exito:
+        st.success(mensaje)
     else:
-        with st.spinner("Procesando datos y guardando..."):
-            datos_charla = {
-                "fecha": fecha.strftime("%Y-%m-%d"),
-                "tipo_actividad": tipo_actividad,
-                "modalidad": modalidad,
-                "relator_nombre": relator_nombre,
-                "relator_rut": relator_rut,
-                "ubicacion": ubicacion,
-                "tema": tema
-            }
-            
-            # 1. Guardar en Google Sheets
-            try:
-                sheet_id = st.secrets["GOOGLE_SHEETS_ID"]
-                append_to_sheets(sheet_id, datos_charla, st.session_state.participantes)
-                st.success("✅ Datos registrados exitosamente en Google Sheets.")
-            except Exception as e:
-                st.error(f"Error al guardar en Google Sheets: {e}")
-
-            # 2. Generar PDF
-            pdf_filename = f"Registro_{fecha.strftime('%Y%m%d')}_{tema.replace(' ', '_')}.pdf"
-            generar_pdf(datos_charla, st.session_state.participantes, pdf_filename)
-
-            # 3. Subir PDF a Supabase
-            try:
-                supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-                
-                with open(pdf_filename, 'rb') as f:
-                    supabase.storage.from_('pdf-charlas').upload(
-                        file=f,
-                        path=pdf_filename,
-                        file_options={"content-type": "application/pdf", "upsert": "true"}
-                    )
-                
-                link_pdf = supabase.storage.from_('pdf-charlas').get_public_url(pdf_filename)
-                st.success("✅ Documento PDF guardado en Supabase.")
-                st.markdown(f"[📄 Ver / Descargar archivo PDF]({link_pdf})")
-            except Exception as e:
-                st.error(f"Error al subir el archivo a Supabase: {e}")
-
-            # Limpiar archivo local temporal
-            if os.path.exists(pdf_filename):
-                os.remove(pdf_filename)
+        st.error(mensaje)
