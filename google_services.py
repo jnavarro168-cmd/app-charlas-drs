@@ -10,8 +10,13 @@ SCOPES = [
 ]
 
 def get_google_credentials():
+    # Convertimos los secrets a un diccionario editable
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    # Corregimos los saltos de línea en la clave privada
+    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    
     return Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
+        creds_dict,
         scopes=SCOPES
     )
 
